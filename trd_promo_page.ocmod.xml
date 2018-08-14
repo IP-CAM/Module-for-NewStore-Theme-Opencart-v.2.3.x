@@ -2,7 +2,7 @@
 <modification>
     <name>Promo Page For NewStore</name>
     <code>Promo Page For NewStore</code>
-    <version>1.0</version>
+    <version>1.77.2</version>
     <author>Roman Turas</author>
     <link>https://romanturas.github.io/</link>
 
@@ -15,7 +15,7 @@
             // Module TRD -- getting products with promo-coupon
             public function getProductPromo($data = array()) {
 
-        $sql = "SELECT DISTINCT p.product_id, (SELECT AVG(rating) FROM " . DB_PREFIX . "review r1 WHERE r1.product_id = p.product_id AND r1.status = '1' GROUP BY r1.product_id) AS rating FROM " . DB_PREFIX . "product p RIGHT JOIN " . DB_PREFIX . "coupon_product cp ON (p.product_id = cp.product_id) LEFT JOIN " . DB_PREFIX . "product_description pd ON (p.product_id = pd.product_id) LEFT JOIN " . DB_PREFIX . "product_to_store p2s ON (p.product_id = p2s.product_id) WHERE p.status = '1' AND p.date_available <= NOW() GROUP BY p.product_id";
+$sql = "(SELECT DISTINCT p.product_id, (SELECT AVG(rating) FROM op_review r1 WHERE r1.product_id = p.product_id AND r1.status = '1' GROUP BY r1.product_id) AS rating FROM op_product p RIGHT JOIN op_coupon_product cp ON (p.product_id = cp.product_id) LEFT JOIN op_product_description pd ON ( p.product_id = pd.product_id) LEFT JOIN op_product_to_store p2s ON (p.product_id = p2s.product_id ) WHERE p.status = '1' AND p.date_available <= NOW() GROUP BY p.product_id";
 
         $sort_data = array(
             'pd.name',
@@ -53,6 +53,41 @@
             $sql .= " LIMIT " . (int)$data['start'] . "," . (int)$data['limit'];
         }
 
+        $sql .= ")";
+        $sql .= " UNION ";
+        //$sql .= "(SELECT DISTINCT pc.product_id, (SELECT AVG(rating) FROM op_review r WHERE r.product_id = pc.product_id AND r.status = '1' GROUP BY r.product_id) AS rating FROM op_product_to_category pc LEFT JOIN op_product_description pd ON (pc.product_id = pd.product_id) LEFT JOIN op_product_to_store p2s ON (pc.product_id = p2s.product_id) WHERE category_id IN (SELECT category_id FROM op_coupon_category WHERE 1)";
+        $sql .= "(SELECT DISTINCT pc.product_id, (SELECT AVG(rating) FROM op_review r WHERE r.product_id = pc.product_id AND r.status = '1' GROUP BY r.product_id) AS rating FROM op_product_to_category pc LEFT JOIN op_product p ON (pc.product_id = p.product_id) LEFT JOIN op_product_description pd ON (pc.product_id = pd.product_id) LEFT JOIN op_product_to_store p2s ON (pc.product_id = p2s.product_id) WHERE category_id IN (SELECT category_id FROM op_coupon_category WHERE 1)";
+
+        if (isset($data['sort']) && in_array($data['sort'], $sort_data)) {
+            if ($data['sort'] == 'pd.name' || $data['sort'] == 'p.model') {
+                $sql .= " ORDER BY LCASE(" . $data['sort'] . ")";
+            } else {
+                $sql .= " ORDER BY " . $data['sort'];
+            }
+        } else {
+            $sql .= " ORDER BY p.sort_order";
+        }
+
+        if (isset($data['order']) && ($data['order'] == 'DESC')) {
+            $sql .= " DESC, LCASE(pd.name) DESC";
+        } else {
+            $sql .= " ASC, LCASE(pd.name) ASC";
+        }
+
+        if (isset($data['start']) || isset($data['limit'])) {
+            if ($data['start'] < 0) {
+                $data['start'] = 0;
+            }
+
+            if ($data['limit'] < 1) {
+                $data['limit'] = 20;
+            }
+
+            $sql .= " LIMIT " . (int)$data['start'] . "," . (int)$data['limit'];
+        }
+
+        $sql .= ")";
+
         $product_data = array();
 
         $query = $this->db->query($sql);
@@ -65,8 +100,7 @@
     }
 
     public function getTotalProductPromo() {
-        $query = $this->db->query("SELECT COUNT(DISTINCT product_id) AS total FROM " . DB_PREFIX . "coupon_product WHERE 1");
-
+    $query = $this->db->query("SELECT SUM( id ) AS total FROM ( SELECT COUNT( cp.product_id ) AS id FROM " . DB_PREFIX . "coupon_product cp WHERE 1 UNION SELECT COUNT( pc.product_id ) AS id FROM " . DB_PREFIX . "product_to_category pc WHERE category_id IN ( SELECT category_id FROM " . DB_PREFIX . "coupon_category WHERE 1 ) ) AS t");
         if (isset($query->row['total'])) {
             return $query->row['total'];
         } else {
